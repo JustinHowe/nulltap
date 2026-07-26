@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nulltap"
+version = "0.1.0"
+description = "Read the nulltap.sh cybersecurity feed from a terminal."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+authors = [{ name = "Justin Howe" }]
+keywords = ["cybersecurity", "news", "cli", "nulltap"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Console",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Security"
+]
+dependencies = []
+
+[project.scripts]
+nulltap = "nulltap.cli:main"
+
+[project.urls]
+Homepage = "https://nulltap.sh"
+Repository = "https://github.com/JustinHowe/nulltap"
+
+[tool.setuptools.packages.find]
+where = ["src"]
