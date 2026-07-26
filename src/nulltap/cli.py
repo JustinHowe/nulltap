@@ -91,6 +91,10 @@ def normalize_item(raw: Any) -> dict[str, Any] | None:
         read_time = max(0, int(raw.get("read_time_minutes", 0)))
     except (TypeError, ValueError):
         read_time = 0
+    try:
+        short_read_time = max(0, int(raw.get("short_read_time_minutes", 0)))
+    except (TypeError, ValueError):
+        short_read_time = 0
 
     content_url = safe_http_url(raw.get("content_url"))
     if content_url and not same_origin(url, content_url):
@@ -105,6 +109,8 @@ def normalize_item(raw: Any) -> dict[str, Any] | None:
         "date_published": safe_text(raw.get("date_published")),
         "tags": tags,
         "read_time_minutes": read_time,
+        "short_read_available": bool(raw.get("short_read_available", False)),
+        "short_read_time_minutes": short_read_time,
         "author": safe_text(raw.get("author")),
         "image": safe_http_url(raw.get("image")),
     }
@@ -224,6 +230,13 @@ def fetch_article(
     )
     if not isinstance(payload, dict) or not isinstance(payload.get("content_text"), str):
         raise FeedError("article does not contain terminal-readable text")
+    short_content = payload.get("short_content_text", "")
+    if short_content and not isinstance(short_content, str):
+        raise FeedError("article contains invalid 1-minute text")
+    try:
+        short_read_time = max(0, int(payload.get("short_read_time_minutes", 0) or 0))
+    except (TypeError, ValueError):
+        short_read_time = 0
 
     raw_sources = payload.get("sources", [])
     if not isinstance(raw_sources, list):
@@ -240,6 +253,8 @@ def fetch_article(
     return {
         **item,
         "content_text": safe_article_text(payload["content_text"]),
+        "short_content_text": safe_article_text(short_content),
+        "short_read_time_minutes": short_read_time,
         "sources": sources,
     }
 
@@ -277,6 +292,13 @@ def build_parser() -> argparse.ArgumentParser:
     common.add_argument("--page-size", type=positive_int, metavar="N", help="articles per page (default: 5)")
     common.add_argument("--days", type=positive_days, metavar="N", help="limit the feed to the last N days")
     common.add_argument("--no-color", action="store_true", help="disable terminal color")
+    reading_mode = common.add_mutually_exclusive_group()
+    reading_mode.add_argument(
+        "--short",
+        action="store_true",
+        help="read 1-minute versions (or set NULLTAP_READING_MODE=short)",
+    )
+    reading_mode.add_argument("--full", action="store_true", help="force full articles")
 
     parser = argparse.ArgumentParser(
         prog="nulltap",
@@ -292,6 +314,7 @@ def build_parser() -> argparse.ArgumentParser:
               nulltap topic identity          browse one topic
               nulltap search "token theft"    search titles, summaries, and tags
               nulltap read 2                  read the second result in the terminal
+              nulltap read 2 --short          read its 1-minute version
 
             Run 'nulltap COMMAND --help' for command-specific options.
             """
@@ -551,6 +574,20 @@ def render_markdown(markdown: str, width: int, use_color: bool) -> tuple[str, li
     return "\n".join(output), links
 
 
+def select_reading_mode(article: dict[str, Any], short_mode: bool) -> dict[str, Any]:
+    if not short_mode:
+        return {**article, "reading_mode": "full"}
+    short_content = article.get("short_content_text", "")
+    if not short_content:
+        raise FeedError("this article does not include a 1-minute read")
+    return {
+        **article,
+        "content_text": short_content,
+        "read_time_minutes": article.get("short_read_time_minutes", 1) or 1,
+        "reading_mode": "short",
+    }
+
+
 def render_article(item: dict[str, Any], use_color: bool, width: int | None = None) -> str:
     width = width or terminal_width()
     lines: list[str] = []
@@ -558,6 +595,8 @@ def render_article(item: dict[str, Any], use_color: bool, width: int | None = No
     lines.extend(paint(line, "1", use_color) for line in title_lines)
 
     metadata = [display_date(item["date_published"]), *item["tags"]]
+    if item.get("reading_mode") == "short":
+        metadata.append("1-minute read")
     if item["read_time_minutes"]:
         metadata.append(f"{item['read_time_minutes']} min")
     if item["author"]:
@@ -641,8 +680,9 @@ def show_article(
     use_color: bool,
     use_pager: bool,
     pager: Callable[[str], None],
+    short_mode: bool,
 ) -> None:
-    article = article_loader(item, timeout)
+    article = select_reading_mode(article_loader(item, timeout), short_mode)
     rendered = render_article(article, use_color)
     if use_pager:
         pager(rendered)
@@ -661,6 +701,7 @@ def browse_items(
     article_loader: Callable[[dict[str, Any], float], dict[str, Any]],
     timeout: float,
     pager: Callable[[str], None],
+    short_mode: bool,
 ) -> int:
     if not items:
         print("No published articles matched.", file=stdout)
@@ -711,6 +752,7 @@ def browse_items(
                     use_color=use_color,
                     use_pager=True,
                     pager=pager,
+                    short_mode=short_mode,
                 )
                 continue
         print(f"Choose an article from {start + 1} to {end}, or use n, p, or q.", file=stdout)
@@ -784,6 +826,10 @@ def run(
     json_output = getattr(args, "json", False)
     plain = getattr(args, "plain", False)
     no_color = getattr(args, "no_color", False)
+    configured_mode = safe_text(os.environ.get("NULLTAP_READING_MODE", "full")).lower()
+    short_mode = getattr(args, "short", False) or (
+        configured_mode == "short" and not getattr(args, "full", False)
+    )
     page_size = min(getattr(args, "page_size", 5), 50)
 
     if timeout <= 0 or timeout > 120:
@@ -821,6 +867,7 @@ def run(
                     article_loader=article_loader,
                     timeout=timeout,
                     pager=pager,
+                    short_mode=short_mode,
                 )
             return 0
         if topics:
@@ -877,7 +924,7 @@ def run(
                 print(f"nulltap: article not found: {safe_text(target)}", file=stderr)
                 return 1
             if command in {"read", "show"}:
-                article = article_loader(item, timeout)
+                article = select_reading_mode(article_loader(item, timeout), short_mode)
                 if json_output:
                     json_dump(article, stdout)
                 else:
@@ -910,6 +957,7 @@ def run(
             article_loader=article_loader,
             timeout=timeout,
             pager=pager,
+            short_mode=short_mode,
         )
     else:
         print_items(selected, stdout, use_color)
