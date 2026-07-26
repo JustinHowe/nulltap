@@ -2,25 +2,26 @@
 
 PyPI releases use GitHub Actions Trusted Publishing. There is no long-lived PyPI password or API token in GitHub.
 
-## One-time setup
+## Publisher configuration
 
-1. Create a PyPI account, enable two-factor authentication, and add recovery codes to a secure password manager.
-2. In the `JustinHowe/nulltap` GitHub repository, create an environment named `pypi`. Add Justin as a required reviewer and prevent administrators from bypassing the rule.
-3. At `https://pypi.org/manage/account/publishing/`, add a pending GitHub publisher with:
-   - PyPI project name: `nulltap`
-   - Owner: `JustinHowe`
-   - Repository: `nulltap`
-   - Workflow: `publish-to-pypi.yml`
-   - Environment: `pypi`
+The `nulltap` PyPI project trusts releases from this repository through the `pypi` GitHub environment:
 
-The pending publisher creates the PyPI project on the first successful release.
+- Owner: `JustinHowe`
+- Repository: `nulltap`
+- Workflow: `publish-to-pypi.yml`
+- Environment: `pypi`
+
+The environment requires Justin's approval before a package can be uploaded. Keep two-factor authentication enabled on PyPI and store its recovery codes securely.
+
+If the workflow, repository, or environment name changes, update the trusted publisher at `https://pypi.org/manage/project/nulltap/settings/publishing/`.
 
 ## Release
 
 1. Update the version in `pyproject.toml` and `src/nulltap/__init__.py`. Both must match.
-2. Merge the tested change to `main`.
-3. Create a GitHub release whose tag is exactly `v<version>`, for example `v0.1.0`.
-4. Review the waiting `pypi` environment deployment in GitHub Actions and approve it.
-5. Confirm the release at `https://pypi.org/project/nulltap/` and install it in a clean environment with `pipx install nulltap`.
+2. Run the unit tests, build both distributions, and run `twine check`.
+3. Merge the tested change to `main`.
+4. Create a GitHub release whose tag is exactly `v<version>`, for example `v0.1.1`.
+5. Review the waiting `pypi` environment deployment in GitHub Actions and approve it.
+6. Confirm the release at `https://pypi.org/project/nulltap/` and install it in a clean environment with `pipx install nulltap`.
 
 PyPI versions cannot be replaced. If a release is wrong, increment the version and publish a new one.

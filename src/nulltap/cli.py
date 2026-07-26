@@ -14,6 +14,7 @@ import urllib.request
 import webbrowser
 from collections import Counter
 from collections.abc import Callable, Iterable, Sequence
+from datetime import datetime, timedelta, timezone
 from typing import Any, TextIO
 
 from . import __version__
@@ -109,6 +110,35 @@ def normalize_item(raw: Any) -> dict[str, Any] | None:
     }
 
 
+def normalize_topic(raw: Any) -> dict[str, str] | None:
+    if not isinstance(raw, dict):
+        return None
+
+    topic_id = safe_text(raw.get("id") or raw.get("topic")).lower()
+    if not topic_id:
+        return None
+    return {
+        "topic": topic_id,
+        "label": safe_text(raw.get("label")) or topic_id,
+        "description": safe_text(raw.get("description")),
+    }
+
+
+def normalize_feed_payload(payload: Any) -> dict[str, list[dict[str, Any]]]:
+    if not isinstance(payload, dict) or not isinstance(payload.get("items"), list):
+        raise FeedError("feed does not contain an items array")
+
+    items = [item for raw in payload["items"] if (item := normalize_item(raw))]
+    raw_topics = payload.get("topics", [])
+    if not isinstance(raw_topics, list):
+        raw_topics = []
+    topics = [topic for raw in raw_topics if (topic := normalize_topic(raw))]
+    return {
+        "items": sorted(items, key=lambda item: item["date_published"], reverse=True),
+        "topics": list({topic["topic"]: topic for topic in topics}.values()),
+    }
+
+
 def _fetch_json(
     url: str,
     *,
@@ -150,11 +180,11 @@ def _fetch_json(
         raise FeedError(f"{label} returned invalid JSON") from exc
 
 
-def fetch_feed(
+def fetch_feed_document(
     url: str = DEFAULT_FEED_URL,
     timeout: float = 10.0,
     opener: Callable[..., Any] = urllib.request.urlopen,
-) -> list[dict[str, Any]]:
+) -> dict[str, list[dict[str, Any]]]:
     payload = _fetch_json(
         url,
         timeout=timeout,
@@ -163,11 +193,16 @@ def fetch_feed(
         accept="application/feed+json, application/json",
         opener=opener,
     )
-    if not isinstance(payload, dict) or not isinstance(payload.get("items"), list):
-        raise FeedError("feed does not contain an items array")
+    return normalize_feed_payload(payload)
 
-    items = [item for raw in payload["items"] if (item := normalize_item(raw))]
-    return sorted(items, key=lambda item: item["date_published"], reverse=True)
+
+def fetch_feed(
+    url: str = DEFAULT_FEED_URL,
+    timeout: float = 10.0,
+    opener: Callable[..., Any] = urllib.request.urlopen,
+) -> list[dict[str, Any]]:
+    """Return feed items for callers using the 0.1.0 list-based API."""
+    return fetch_feed_document(url, timeout, opener)["items"]
 
 
 def fetch_article(
@@ -219,6 +254,16 @@ def positive_int(value: str) -> int:
     return parsed
 
 
+def positive_days(value: str) -> int:
+    try:
+        parsed = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("must be an integer") from exc
+    if parsed < 1 or parsed > 36500:
+        raise argparse.ArgumentTypeError("must be between 1 and 36500")
+    return parsed
+
+
 def build_parser() -> argparse.ArgumentParser:
     common = argparse.ArgumentParser(add_help=False, argument_default=argparse.SUPPRESS)
     common.add_argument(
@@ -230,42 +275,82 @@ def build_parser() -> argparse.ArgumentParser:
     common.add_argument("--json", action="store_true", help="emit JSON for scripts")
     common.add_argument("--plain", action="store_true", help="print once without menus or a pager")
     common.add_argument("--page-size", type=positive_int, metavar="N", help="articles per page (default: 5)")
+    common.add_argument("--days", type=positive_days, metavar="N", help="limit the feed to the last N days")
     common.add_argument("--no-color", action="store_true", help="disable terminal color")
 
     parser = argparse.ArgumentParser(
         prog="nulltap",
         parents=[common],
-        description="Browse and read nulltap from a terminal.",
+        description="Read Nulltap articles without leaving the terminal.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=textwrap.dedent(
+            """
+            examples:
+              nulltap                         browse recent articles
+              nulltap latest --days 7         show the last seven days
+              nulltap topics                  list the current topic catalog
+              nulltap topic identity          browse one topic
+              nulltap search "token theft"    search titles, summaries, and tags
+              nulltap read 2                  read the second result in the terminal
+
+            Run 'nulltap COMMAND --help' for command-specific options.
+            """
+        ),
     )
     parser.add_argument("--version", action="version", version=f"nulltap {__version__}")
-    subparsers = parser.add_subparsers(dest="command")
+    subparsers = parser.add_subparsers(dest="command", title="commands", metavar="COMMAND")
 
-    browse = subparsers.add_parser("browse", parents=[common], help="browse recent articles")
-    browse.add_argument("-n", "--limit", type=positive_int, default=50)
+    browse = subparsers.add_parser(
+        "browse",
+        parents=[common],
+        help="browse the feed (default)",
+        description="Browse recent Nulltap articles, newest first.",
+    )
+    browse.add_argument("-n", "--limit", type=positive_int, default=50, help="maximum articles shown (default: 50)")
     browse.add_argument("-t", "--topic", help="limit results to one topic")
 
-    latest = subparsers.add_parser("latest", parents=[common], help="browse recent articles")
-    latest.add_argument("-n", "--limit", type=positive_int, default=50)
+    latest = subparsers.add_parser(
+        "latest",
+        parents=[common],
+        help="browse the newest articles",
+        description="Browse the newest Nulltap articles.",
+    )
+    latest.add_argument("-n", "--limit", type=positive_int, default=50, help="maximum articles shown (default: 50)")
     latest.add_argument("-t", "--topic", help="limit results to one topic")
 
-    subparsers.add_parser("topics", parents=[common], help="choose a topic")
+    subparsers.add_parser(
+        "topics",
+        parents=[common],
+        help="list topics or choose one interactively",
+        description="List every Nulltap topic and its article count.",
+    )
 
-    topic = subparsers.add_parser("topic", parents=[common], help="browse articles for one topic")
-    topic.add_argument("name", nargs="?", help="topic name, such as identity or cloud")
-    topic.add_argument("-n", "--limit", type=positive_int, default=100)
+    topic = subparsers.add_parser(
+        "topic",
+        parents=[common],
+        help="browse articles for one topic",
+        description="Browse articles filed under one topic.",
+    )
+    topic.add_argument("name", nargs="?", help="topic ID; run 'nulltap topics' to list them")
+    topic.add_argument("-n", "--limit", type=positive_int, default=100, help="maximum articles shown (default: 100)")
 
-    search = subparsers.add_parser("search", parents=[common], help="search and choose an article")
+    search = subparsers.add_parser(
+        "search",
+        parents=[common],
+        help="search titles, summaries, and topic tags",
+        description="Search article titles, summaries, and topic tags.",
+    )
     search.add_argument("query", nargs="*", help="words to search for")
     search.add_argument("-t", "--topic", help="limit results to one topic")
-    search.add_argument("-n", "--limit", type=positive_int, default=100)
+    search.add_argument("-n", "--limit", type=positive_int, default=100, help="maximum matches shown (default: 100)")
 
-    read = subparsers.add_parser("read", parents=[common], help="read an article or browse when omitted")
+    read = subparsers.add_parser("read", parents=[common], help="read in the terminal or browse when omitted")
     read.add_argument("target", nargs="?", help="result number, article ID, slug, or URL")
 
     show = subparsers.add_parser("show", parents=[common], help="alias for read")
     show.add_argument("target", nargs="?", help="result number, article ID, slug, or URL")
 
-    open_command = subparsers.add_parser("open", parents=[common], help="open one article in a browser")
+    open_command = subparsers.add_parser("open", parents=[common], help="optional handoff to a web browser")
     open_command.add_argument("target", help="result number, article ID, slug, or URL")
 
     return parser
@@ -276,6 +361,33 @@ def filter_topic(items: Iterable[dict[str, Any]], topic: str | None) -> list[dic
         return list(items)
     wanted = safe_text(topic).lower()
     return [item for item in items if wanted in item["tags"]]
+
+
+def filter_days(
+    items: Iterable[dict[str, Any]],
+    days: int | None,
+    *,
+    now: datetime | None = None,
+) -> list[dict[str, Any]]:
+    if not days:
+        return list(items)
+
+    current = now or datetime.now(timezone.utc)
+    if current.tzinfo is None:
+        current = current.replace(tzinfo=timezone.utc)
+    cutoff = current.astimezone(timezone.utc) - timedelta(days=days)
+    selected = []
+    for item in items:
+        raw_date = item.get("date_published", "")
+        try:
+            published = datetime.fromisoformat(raw_date.replace("Z", "+00:00"))
+        except (AttributeError, TypeError, ValueError):
+            continue
+        if published.tzinfo is None:
+            published = published.replace(tzinfo=timezone.utc)
+        if published.astimezone(timezone.utc) >= cutoff:
+            selected.append(item)
+    return selected
 
 
 def search_items(items: Iterable[dict[str, Any]], query: str) -> list[dict[str, Any]]:
@@ -609,23 +721,41 @@ def json_dump(value: Any, stream: TextIO) -> None:
     print(file=stream)
 
 
-def topic_counts(items: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
+def topic_counts(
+    items: Iterable[dict[str, Any]],
+    catalog: Iterable[dict[str, str]] = (),
+) -> list[dict[str, Any]]:
     counts = Counter(tag for item in items for tag in item["tags"])
-    return [
-        {"topic": topic, "articles": count}
-        for topic, count in sorted(counts.items(), key=lambda row: (-row[1], row[0]))
-    ]
+    rows = []
+    seen = set()
+    for entry in catalog:
+        topic = entry["topic"]
+        if topic in seen:
+            continue
+        seen.add(topic)
+        rows.append({**entry, "articles": counts.get(topic, 0)})
+    for topic, count in sorted(counts.items(), key=lambda row: (-row[1], row[0])):
+        if topic not in seen:
+            rows.append({"topic": topic, "label": topic, "description": "", "articles": count})
+    return rows
 
 
-def choose_topic(items: Sequence[dict[str, Any]], stdin: TextIO, stdout: TextIO, use_color: bool) -> str | None:
-    topics = topic_counts(items)
+def choose_topic(
+    items: Sequence[dict[str, Any]],
+    catalog: Sequence[dict[str, str]],
+    stdin: TextIO,
+    stdout: TextIO,
+    use_color: bool,
+) -> str | None:
+    topics = topic_counts(items, catalog)
     if not topics:
         print("No published topics yet.", file=stdout)
         return None
     print(file=stdout)
     print(paint("Topics", "1;38;5;214", use_color), file=stdout)
     for index, row in enumerate(topics, 1):
-        print(f"[{index}] {row['topic']:<12} {row['articles']} articles", file=stdout)
+        noun = "article" if row["articles"] == 1 else "articles"
+        print(f"[{index}] {row['label']:<12} {row['articles']} {noun}", file=stdout)
     choice = read_prompt("\nChoose a topic number, or q to quit\n> ", stdin, stdout).lower()
     if choice in {"q", "quit", "exit"}:
         return None
@@ -641,7 +771,7 @@ def run(
     stdin: TextIO = sys.stdin,
     stdout: TextIO = sys.stdout,
     stderr: TextIO = sys.stderr,
-    feed_loader: Callable[[str, float], list[dict[str, Any]]] = fetch_feed,
+    feed_loader: Callable[[str, float], Any] = fetch_feed_document,
     article_loader: Callable[[dict[str, Any], float], dict[str, Any]] = fetch_article,
     browser_opener: Callable[..., bool] = webbrowser.open,
     pager: Callable[[str], None] = pydoc.pager,
@@ -659,21 +789,31 @@ def run(
     if timeout <= 0 or timeout > 120:
         parser.error("--timeout must be greater than 0 and no more than 120 seconds")
 
-    items = feed_loader(feed_url, timeout)
+    loaded_feed = feed_loader(feed_url, timeout)
+    if isinstance(loaded_feed, dict):
+        feed = normalize_feed_payload(loaded_feed)
+    else:
+        feed = normalize_feed_payload({"items": list(loaded_feed), "topics": []})
+    items = filter_days(feed["items"], getattr(args, "days", None))
+    topic_catalog = feed["topics"]
     use_color = color_enabled(stdout, no_color)
     interactive = interactive_enabled(stdin, stdout, plain, json_output)
 
     if command == "topics":
-        topics = topic_counts(items)
+        topics = topic_counts(items, topic_catalog)
         if json_output:
             json_dump(topics, stdout)
             return 0
         if interactive:
-            chosen = choose_topic(items, stdin, stdout, use_color)
+            chosen = choose_topic(items, topic_catalog, stdin, stdout, use_color)
             if chosen:
+                chosen_label = next(
+                    (row["label"] for row in topics if row["topic"] == chosen),
+                    chosen,
+                )
                 return browse_items(
                     filter_topic(items, chosen),
-                    heading=f"Topic: {chosen}",
+                    heading=f"Topic: {chosen_label}",
                     page_size=page_size,
                     stdin=stdin,
                     stdout=stdout,
@@ -684,9 +824,9 @@ def run(
                 )
             return 0
         if topics:
-            width = max(len(row["topic"]) for row in topics)
+            width = max(len(row["label"]) for row in topics)
             for row in topics:
-                print(f"{row['topic']:<{width}}  {row['articles']}", file=stdout)
+                print(f"{row['label']:<{width}}  {row['articles']}", file=stdout)
         else:
             print("No published topics yet.", file=stdout)
         return 0
@@ -694,21 +834,24 @@ def run(
     if command == "topic":
         topic_name = args.name
         if not topic_name and interactive:
-            topic_name = choose_topic(items, stdin, stdout, use_color)
+            topic_name = choose_topic(items, topic_catalog, stdin, stdout, use_color)
             if not topic_name:
                 return 0
         if not topic_name:
             print("nulltap: provide a topic name or run this command in a terminal", file=stderr)
             return 1
         selected = filter_topic(items, topic_name)
-        if not selected and items:
-            available = ", ".join(row["topic"] for row in topic_counts(items))
+        available_rows = topic_counts(items, topic_catalog)
+        wanted_topic = safe_text(topic_name).lower()
+        if wanted_topic not in {row["topic"] for row in available_rows}:
+            available = ", ".join(row["topic"] for row in available_rows)
             print(f"nulltap: no topic named '{safe_text(topic_name)}'", file=stderr)
             if available:
                 print(f"available topics: {available}", file=stderr)
             return 1
         selected = selected[: args.limit]
-        heading = f"Topic: {safe_text(topic_name).lower()}"
+        label = next((row["label"] for row in available_rows if row["topic"] == wanted_topic), wanted_topic)
+        heading = f"Topic: {label}"
     elif command == "search":
         query = " ".join(args.query)
         if not query and interactive:
