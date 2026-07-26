@@ -2,10 +2,20 @@ import io
 import json
 import re
 import unittest
+from datetime import datetime, timezone
 from pathlib import Path
 
 from nulltap import __version__
-from nulltap.cli import fetch_feed, normalize_item, render_article, run, search_items
+from nulltap.cli import (
+    build_parser,
+    fetch_feed,
+    fetch_feed_document,
+    filter_days,
+    normalize_item,
+    render_article,
+    run,
+    search_items,
+)
 
 
 ITEMS = [
@@ -33,6 +43,16 @@ ITEMS = [
         "author": "nulltap",
         "image": "",
     },
+]
+
+TOPICS = [
+    {"id": "endpoint", "label": "endpoint", "description": "Endpoint security."},
+    {"id": "cloud", "label": "cloud", "description": "Cloud security."},
+    {"id": "network", "label": "network", "description": "Network security."},
+    {"id": "identity", "label": "identity", "description": "Identity security."},
+    {"id": "appsec", "label": "appsec", "description": "Application security."},
+    {"id": "ai", "label": "AI", "description": "AI security."},
+    {"id": "threats", "label": "threats", "description": "Threat activity."},
 ]
 
 
@@ -70,7 +90,10 @@ class NulltapCliTests(unittest.TestCase):
             args,
             stdout=stdout,
             stderr=stderr,
-            feed_loader=lambda _url, _timeout: list(ITEMS if items is None else items),
+            feed_loader=lambda _url, _timeout: {
+                "items": list(ITEMS if items is None else items),
+                "topics": TOPICS,
+            },
             article_loader=lambda item, _timeout: {
                 **item,
                 "content_text": "## Access path\n\nThe token crossed a trust boundary.\n\n[Image: Token path]",
@@ -90,7 +113,10 @@ class NulltapCliTests(unittest.TestCase):
             stdin=stdin,
             stdout=stdout,
             stderr=stderr,
-            feed_loader=lambda _url, _timeout: list(ITEMS if items is None else items),
+            feed_loader=lambda _url, _timeout: {
+                "items": list(ITEMS if items is None else items),
+                "topics": TOPICS,
+            },
             article_loader=lambda item, _timeout: {
                 **item,
                 "content_text": "## Access path\n\nThe token crossed a trust boundary.",
@@ -117,8 +143,16 @@ class NulltapCliTests(unittest.TestCase):
         code, stdout, _ = self.invoke(["topics", "--json"])
         self.assertEqual(code, 0)
         topics = json.loads(stdout)
-        self.assertIn({"topic": "identity", "articles": 1}, topics)
-        self.assertIn({"topic": "ai", "articles": 1}, topics)
+        counts = {row["topic"]: row["articles"] for row in topics}
+        self.assertEqual(counts["identity"], 1)
+        self.assertEqual(counts["ai"], 1)
+        self.assertEqual(counts["endpoint"], 0)
+
+    def test_help_surfaces_examples_and_date_filter(self):
+        help_text = build_parser().format_help()
+        self.assertIn("nulltap latest --days 7", help_text)
+        self.assertIn("nulltap topics", help_text)
+        self.assertIn("limit the feed to the last N days", help_text)
 
     def test_search_uses_title_summary_and_tags(self):
         results = search_items(ITEMS, "production credentials")
@@ -177,12 +211,26 @@ class NulltapCliTests(unittest.TestCase):
         self.assertIn("The AI Gateway Had Root", pages[0])
 
     def test_topics_menu_opens_a_topic_and_article(self):
-        code, stdout, _, pages = self.invoke_interactive(["topics"], "1\n1\nq\n")
+        code, stdout, _, pages = self.invoke_interactive(["topics"], "6\n1\nq\n")
         self.assertEqual(code, 0)
         self.assertIn("Topics", stdout)
-        self.assertIn("Topic: ai", stdout)
+        self.assertIn("Topic: AI", stdout)
         self.assertEqual(len(pages), 1)
         self.assertIn("The AI Gateway Had Root", pages[0])
+
+    def test_known_empty_topic_is_not_reported_as_invalid(self):
+        code, stdout, stderr = self.invoke(["topic", "endpoint"])
+        self.assertEqual(code, 0)
+        self.assertIn("No published articles matched.", stdout)
+        self.assertEqual(stderr, "")
+
+    def test_days_filter_uses_publication_time(self):
+        selected = filter_days(
+            ITEMS,
+            1,
+            now=datetime(2026, 7, 26, 18, 0, tzinfo=timezone.utc),
+        )
+        self.assertEqual([item["id"] for item in selected], ["2026-07-26-cloud-token"])
 
     def test_direct_read_uses_pager_in_a_terminal(self):
         code, _, _, pages = self.invoke_interactive(["read", "1"], "")
@@ -245,6 +293,16 @@ class NulltapCliTests(unittest.TestCase):
         items = fetch_feed("https://nulltap.sh/feed.json", 3, opener=opener)
         self.assertEqual(len(items), 1)
         self.assertEqual(seen, {"url": "https://nulltap.sh/feed.json", "timeout": 3})
+
+    def test_fetch_feed_document_includes_topic_catalog(self):
+        payload = json.dumps({"items": ITEMS, "topics": TOPICS}).encode()
+        document = fetch_feed_document(
+            "https://nulltap.sh/feed.json",
+            3,
+            opener=lambda _request, timeout: FakeResponse(payload),
+        )
+        self.assertEqual(document["topics"][0]["topic"], "endpoint")
+        self.assertEqual(document["topics"][5]["label"], "AI")
 
     def test_unknown_topic_returns_helpful_error(self):
         code, _, stderr = self.invoke(["topic", "nope"])

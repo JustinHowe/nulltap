@@ -1,76 +1,84 @@
 # nulltap
 
-Nulltap in your terminal. This client reads the public [nulltap.sh](https://nulltap.sh) JSON feed and prints cybersecurity and AI coverage without requiring an account.
+Read [Nulltap](https://nulltap.sh) from a terminal. Browse recent cybersecurity and AI articles, search the feed, filter by topic, and read the full article without opening a browser.
 
 ## Install
 
-Python 3.10 or newer is required. After the first PyPI release, install it with [pipx](https://pipx.pypa.io/):
+Python 3.10 or newer is required. [pipx](https://pipx.pypa.io/) keeps the command in its own environment:
 
 ```sh
 pipx install nulltap
 ```
 
-Until then, install the current version from GitHub with `pipx install git+https://github.com/JustinHowe/nulltap.git`.
-
-Run `nulltap --help` after installation.
-
-## Commands
+To upgrade an existing installation:
 
 ```sh
-nulltap                         # paginated recent articles; type a number to read
-nulltap browse                  # explicit form of the default command
-nulltap latest -n 20            # browse the newest 20 articles
-nulltap latest --topic identity
-nulltap topics                  # choose a topic, then choose an article
-nulltap topic ai                # paginated articles tagged AI
-nulltap topic                   # choose a topic interactively
-nulltap search                  # enter search words interactively
-nulltap search "token theft"
-nulltap search gateway --topic appsec
-nulltap read 1                  # directly read the newest article
-nulltap read                    # browse first when no number is supplied
-nulltap --plain                 # print once; no prompts or pager
+pipx upgrade nulltap
 ```
 
-Interactive lists show five articles per page so a page fits a normal terminal window. Enter the displayed number to read an article, `n` for the next page, `p` for the previous page, or `q` to leave. Use `--page-size N` to change the page size.
+A regular pip installation also works: `python -m pip install nulltap`.
 
-Articles open in the terminal pager. Headings, lists, quotations, code blocks, images, inline links, and primary sources are formatted for terminal reading. Press `q` to leave the pager and return to the article list. No browser is required.
-
-When output is redirected, nulltap automatically disables menus and the pager. `--plain` does the same thing explicitly. Article IDs, slugs, and URLs remain accepted as direct targets for scripts, but ordinary readers should not need them.
-
-## Search
-
-Search belongs in the CLI because it is useful when the browser is not. It runs locally over article titles, summaries, and topic tags. Search terms are never sent to nulltap or another service.
-
-Every word in the query must match. Title matches rank above tag and summary matches, with publication date breaking ties.
-
-## Scripts
-
-Add `--json` to `browse`, `latest`, `topics`, `topic`, `search`, `read`, or `show`:
+## Start here
 
 ```sh
+nulltap                         # browse recent articles
+nulltap latest --days 7         # articles published in the last seven days
+nulltap topics                  # list every topic and its article count
+nulltap topic identity          # browse one topic
+nulltap search "token theft"    # search titles, summaries, and topic tags
+nulltap read 2                  # read the second result in the terminal
+```
+
+Interactive lists show five articles at a time. Enter a result number to read it, `n` or `p` to change pages, and `q` to leave. Use `--page-size N` if you want a different page size.
+
+Articles open in the terminal pager with headings, lists, quotations, code blocks, image descriptions, links, and primary sources formatted for the console. Press `q` to return to the article list.
+
+## Topics
+
+Nulltap currently publishes under these topics:
+
+```text
+endpoint
+cloud
+network
+identity
+appsec
+AI
+threats
+```
+
+`nulltap topics` reads the catalog from nulltap.sh and shows every topic, including topics that do not have a published article yet. Topic IDs are case-insensitive.
+
+## Search and recent filters
+
+Search runs locally over the feed already downloaded from nulltap.sh. Search words are not sent to Nulltap or another service.
+
+Every search word must match the title, summary, or a topic tag. Title matches rank first, followed by topic and summary matches. Publication date breaks ties.
+
+Use `--days N` with browsing, topics, or search to limit the downloaded feed by publication time:
+
+```sh
+nulltap search ransomware --days 30
+nulltap topic cloud --days 14
+nulltap topics --days 90
+```
+
+## Automation
+
+Use `--json` for structured output or `--plain` for stable text without menus, color, or a pager:
+
+```sh
+nulltap latest --days 7 --json
 nulltap search ransomware --json
-nulltap topics --json
+nulltap topics --plain
 ```
 
-Use a different compatible feed during development:
+Redirected output automatically uses non-interactive mode. Article IDs and slugs remain accepted by `read` for scripts, but ordinary browsing does not require them.
 
-```sh
-nulltap --feed http://127.0.0.1:4321/feed.json
-# or
-NULLTAP_FEED_URL=http://127.0.0.1:4321/feed.json nulltap
-```
+## Network and privacy
 
-Listing and search commands make one read-only feed request. Reading an article makes a second request for that article's text. The client has no analytics, login, local database, or background process. Feed and article text are stripped of terminal control sequences before display.
+Listing and search commands make one read-only request to the public feed. Reading an article makes one additional request for its text. The client has no analytics, account, background process, or local database. Feed and article text are stripped of terminal control sequences before display.
 
-## Development
-
-```sh
-python -m venv .venv
-# Windows: .venv\Scripts\activate
-# macOS/Linux: source .venv/bin/activate
-python -m pip install -e .
-python -m unittest discover -s tests -v
-```
+Contributor setup, local feed overrides, and release checks are documented in [CONTRIBUTING.md](https://github.com/JustinHowe/nulltap/blob/main/CONTRIBUTING.md).
 
 Licensed under the MIT License.
