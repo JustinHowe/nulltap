@@ -2,6 +2,7 @@ import io
 import json
 import re
 import unittest
+from unittest.mock import patch
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -15,6 +16,8 @@ from nulltap.cli import (
     render_article,
     run,
     search_items,
+    select_reading_mode,
+    FeedError,
 )
 
 
@@ -28,6 +31,8 @@ ITEMS = [
         "date_published": "2026-07-26T12:00:00Z",
         "tags": ["cloud", "identity"],
         "read_time_minutes": 6,
+        "short_read_available": True,
+        "short_read_time_minutes": 1,
         "author": "nulltap",
         "image": "",
     },
@@ -40,6 +45,8 @@ ITEMS = [
         "date_published": "2026-07-25T12:00:00Z",
         "tags": ["ai", "appsec"],
         "read_time_minutes": 4,
+        "short_read_available": True,
+        "short_read_time_minutes": 1,
         "author": "nulltap",
         "image": "",
     },
@@ -97,6 +104,8 @@ class NulltapCliTests(unittest.TestCase):
             article_loader=lambda item, _timeout: {
                 **item,
                 "content_text": "## Access path\n\nThe token crossed a trust boundary.\n\n[Image: Token path]",
+                "short_content_text": "The token crossed a trust boundary. Revoke it and inspect the audit log.",
+                "short_read_time_minutes": 1,
                 "sources": [{"label": "Primary advisory", "url": "https://example.com/advisory"}],
             },
             browser_opener=opener or (lambda _url, **_kwargs: True),
@@ -120,6 +129,8 @@ class NulltapCliTests(unittest.TestCase):
             article_loader=lambda item, _timeout: {
                 **item,
                 "content_text": "## Access path\n\nThe token crossed a trust boundary.",
+                "short_content_text": "The short read keeps the affected boundary and the immediate check.",
+                "short_read_time_minutes": 1,
                 "sources": [],
             },
             pager=pages.append,
@@ -153,6 +164,7 @@ class NulltapCliTests(unittest.TestCase):
         self.assertIn("nulltap latest --days 7", help_text)
         self.assertIn("nulltap topics", help_text)
         self.assertIn("limit the feed to the last N days", help_text)
+        self.assertIn("nulltap read 2 --short", help_text)
 
     def test_search_uses_title_summary_and_tags(self):
         results = search_items(ITEMS, "production credentials")
@@ -176,6 +188,25 @@ class NulltapCliTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertIn("Access path", stdout)
         self.assertNotIn("## Access path", stdout)
+
+    def test_short_mode_reads_the_one_minute_version(self):
+        code, stdout, stderr = self.invoke(["read", "1", "--short"])
+        self.assertEqual(code, 0)
+        self.assertEqual(stderr, "")
+        self.assertIn("1-minute read", stdout)
+        self.assertIn("Revoke it and inspect the audit log.", stdout)
+        self.assertNotIn("Access path", stdout)
+
+    def test_full_flag_overrides_short_environment_default(self):
+        with patch.dict("os.environ", {"NULLTAP_READING_MODE": "short"}):
+            code, stdout, _ = self.invoke(["read", "1", "--full"])
+        self.assertEqual(code, 0)
+        self.assertIn("Access path", stdout)
+        self.assertNotIn("1-minute read", stdout)
+
+    def test_short_mode_fails_clearly_when_article_has_no_short_read(self):
+        with self.assertRaisesRegex(FeedError, "does not include a 1-minute read"):
+            select_reading_mode({**ITEMS[0], "content_text": "Full article"}, True)
 
     def test_list_does_not_require_browser_urls(self):
         code, stdout, _ = self.invoke(["latest"])

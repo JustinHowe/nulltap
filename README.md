@@ -1,6 +1,6 @@
 # nulltap
 
-Read [Nulltap](https://nulltap.sh) from a terminal. Browse recent cybersecurity and AI articles, search the feed, filter by topic, and read the full article without opening a browser.
+Read [Nulltap](https://nulltap.sh) from a terminal. Browse recent cybersecurity and AI articles, search the feed, filter by topic, and choose the full or 1-minute version without opening a browser.
 
 ## Install
 
@@ -27,11 +27,23 @@ nulltap topics                  # list every topic and its article count
 nulltap topic identity          # browse one topic
 nulltap search "token theft"    # search titles, summaries, and topic tags
 nulltap read 2                  # read the second result in the terminal
+nulltap read 2 --short          # read its 1-minute version
 ```
 
 Interactive lists show five articles at a time. Enter a result number to read it, `n` or `p` to change pages, and `q` to leave. Use `--page-size N` if you want a different page size.
 
 Articles open in the terminal pager with headings, lists, quotations, code blocks, image descriptions, links, and primary sources formatted for the console. Press `q` to return to the article list.
+
+## Reading modes
+
+Full articles are the default. Add `--short` to use the 1-minute version when you read from a list, search result, topic, or direct `read` command:
+
+```sh
+nulltap search "token theft" --short
+nulltap read 2 --short
+```
+
+Set the `NULLTAP_READING_MODE` environment variable to `short` if you want that behavior by default. The `--full` flag overrides the environment for one command. Nulltap stops with a clear message instead of silently showing the full article when a requested 1-minute version is unavailable.
 
 ## Topics
 
