@@ -94,3 +94,5 @@ Listing and search commands make one read-only request to the public feed. Readi
 Contributor setup, local feed overrides, and release checks are documented in [CONTRIBUTING.md](https://github.com/JustinHowe/nulltap/blob/main/CONTRIBUTING.md).
 
 Licensed under the MIT License.
+
+Nulltap is a trademark of Cyberhawk LLC.
