@@ -20,7 +20,7 @@ If the workflow, repository, or environment name changes, update the trusted pub
 1. Update the version in `pyproject.toml` and `src/nulltap/__init__.py`. Both must match.
 2. Run the unit tests, build both distributions, and run `twine check`.
 3. Merge the tested change to `main`.
-4. Create a GitHub release whose tag is exactly `v<version>`, for example `v0.1.1`.
+4. Create a GitHub release whose tag is exactly `v<version>`, for example `v0.1.1`. The tag must point to a commit already merged into protected `main`; the publish workflow verifies that ancestry before it builds.
 5. Review the waiting `pypi` environment deployment in GitHub Actions and approve it.
 6. Confirm the release at `https://pypi.org/project/nulltap/` and install it in a clean environment with `pipx install nulltap`.
 
