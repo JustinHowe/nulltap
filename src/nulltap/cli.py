@@ -25,6 +25,7 @@ MAX_FEED_BYTES = 5 * 1024 * 1024
 MAX_ARTICLE_BYTES = 2 * 1024 * 1024
 ANSI_ESCAPE = re.compile(r"\x1b(?:[@-Z\-_]|\[[0-?]*[ -/]*[@-~])")
 CONTROL_CHARS = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]")
+BIDI_CONTROLS = re.compile(r"[\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]")
 MARKDOWN_IMAGE = re.compile(r"!\[([^]]*)]\([^)]+\)")
 MARKDOWN_LINK = re.compile(r"(?<!!)\[([^]]+)]\((https?://[^\s)]+)\)")
 HEADING = re.compile(r"^(#{1,6})\s+(.+?)\s*#*$")
@@ -40,6 +41,7 @@ class FeedError(RuntimeError):
 def safe_text(value: Any) -> str:
     text = ANSI_ESCAPE.sub("", str(value or ""))
     text = CONTROL_CHARS.sub("", text)
+    text = BIDI_CONTROLS.sub("", text)
     return " ".join(text.split())
 
 
@@ -56,6 +58,7 @@ def safe_http_url(value: Any) -> str:
 def safe_article_text(value: Any) -> str:
     text = ANSI_ESCAPE.sub("", str(value or ""))
     text = CONTROL_CHARS.sub("", text.replace("\r\n", "\n").replace("\r", "\n"))
+    text = BIDI_CONTROLS.sub("", text)
     text = MARKDOWN_IMAGE.sub(
         lambda match: f"[Image: {safe_text(match.group(1))}]" if match.group(1) else "[Image]",
         text,
@@ -73,13 +76,17 @@ def same_origin(first: str, second: str) -> bool:
     )
 
 
-def normalize_item(raw: Any) -> dict[str, Any] | None:
+def normalize_item(
+    raw: Any,
+    feed_url: str = DEFAULT_FEED_URL,
+) -> dict[str, Any] | None:
     if not isinstance(raw, dict):
         return None
 
     title = safe_text(raw.get("title"))
     url = safe_http_url(raw.get("url"))
-    if not title or not url:
+    trusted_origin = safe_http_url(feed_url)
+    if not title or not url or not trusted_origin or not same_origin(url, trusted_origin):
         return None
 
     raw_tags = raw.get("tags", [])
@@ -130,11 +137,18 @@ def normalize_topic(raw: Any) -> dict[str, str] | None:
     }
 
 
-def normalize_feed_payload(payload: Any) -> dict[str, list[dict[str, Any]]]:
+def normalize_feed_payload(
+    payload: Any,
+    feed_url: str = DEFAULT_FEED_URL,
+) -> dict[str, list[dict[str, Any]]]:
     if not isinstance(payload, dict) or not isinstance(payload.get("items"), list):
         raise FeedError("feed does not contain an items array")
 
-    items = [item for raw in payload["items"] if (item := normalize_item(raw))]
+    items = [
+        item
+        for raw in payload["items"]
+        if (item := normalize_item(raw, feed_url=feed_url))
+    ]
     raw_topics = payload.get("topics", [])
     if not isinstance(raw_topics, list):
         raw_topics = []
@@ -167,6 +181,11 @@ def _fetch_json(
 
     try:
         with opener(request, timeout=timeout) as response:
+            final_url = safe_http_url(
+                response.geturl() if hasattr(response, "geturl") else request.full_url
+            )
+            if not final_url or not same_origin(request.full_url, final_url):
+                raise FeedError(f"{label} redirected to a different origin")
             content_length = response.headers.get("Content-Length")
             if content_length and int(content_length) > maximum_bytes:
                 raise FeedError(f"{label} is larger than {maximum_bytes // (1024 * 1024)} MiB")
@@ -199,7 +218,7 @@ def fetch_feed_document(
         accept="application/feed+json, application/json",
         opener=opener,
     )
-    return normalize_feed_payload(payload)
+    return normalize_feed_payload(payload, feed_url=url)
 
 
 def fetch_feed(

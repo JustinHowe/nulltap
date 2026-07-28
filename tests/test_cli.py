@@ -64,8 +64,9 @@ TOPICS = [
 
 
 class FakeResponse:
-    def __init__(self, payload):
+    def __init__(self, payload, url="https://nulltap.sh/feed.json"):
         self.payload = payload
+        self.url = url
         self.headers = {}
 
     def __enter__(self):
@@ -76,6 +77,9 @@ class FakeResponse:
 
     def read(self, _limit):
         return self.payload
+
+    def geturl(self):
+        return self.url
 
 
 class TTYBuffer(io.StringIO):
@@ -312,6 +316,39 @@ class NulltapCliTests(unittest.TestCase):
         self.assertEqual(item["tags"], ["ai"])
         self.assertEqual(item["content_url"], "")
 
+    def test_normalization_rejects_article_urls_outside_feed_origin(self):
+        item = normalize_item(
+            {
+                "url": "http://127.0.0.1:8000/private",
+                "content_url": "http://127.0.0.1:8000/private.json",
+                "title": "Local service",
+            },
+            feed_url="https://feed.example/feed.json",
+        )
+        self.assertIsNone(item)
+
+    def test_local_feed_can_reference_its_own_origin(self):
+        item = normalize_item(
+            {
+                "url": "http://127.0.0.1:8000/article/",
+                "content_url": "http://127.0.0.1:8000/article.json",
+                "title": "Local article",
+            },
+            feed_url="http://127.0.0.1:8000/feed.json",
+        )
+        self.assertEqual(item["content_url"], "http://127.0.0.1:8000/article.json")
+
+    def test_normalization_strips_bidirectional_controls(self):
+        item = normalize_item(
+            {
+                **ITEMS[0],
+                "title": "safe\u202eevil",
+                "summary": "plain\u2066text\u2069",
+            }
+        )
+        self.assertEqual(item["title"], "safeevil")
+        self.assertEqual(item["summary"], "plaintext")
+
     def test_fetch_feed_sends_no_search_query(self):
         seen = {}
         payload = json.dumps({"items": [ITEMS[0]]}).encode()
@@ -324,6 +361,18 @@ class NulltapCliTests(unittest.TestCase):
         items = fetch_feed("https://nulltap.sh/feed.json", 3, opener=opener)
         self.assertEqual(len(items), 1)
         self.assertEqual(seen, {"url": "https://nulltap.sh/feed.json", "timeout": 3})
+
+    def test_fetch_feed_rejects_cross_origin_redirect(self):
+        payload = json.dumps({"items": [ITEMS[0]]}).encode()
+        with self.assertRaisesRegex(FeedError, "redirected to a different origin"):
+            fetch_feed(
+                "https://nulltap.sh/feed.json",
+                3,
+                opener=lambda _request, timeout: FakeResponse(
+                    payload,
+                    "http://127.0.0.1:8000/feed.json",
+                ),
+            )
 
     def test_fetch_feed_document_includes_topic_catalog(self):
         payload = json.dumps({"items": ITEMS, "topics": TOPICS}).encode()

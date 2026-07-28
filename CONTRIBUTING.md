@@ -30,6 +30,11 @@ nulltap --feed http://127.0.0.1:4321/feed.json
 
 The `NULLTAP_FEED_URL` environment variable provides the same override. The public feed contains a topic catalog and an article list. Older feeds that contain only article items remain supported.
 
+Feed items are confined to the feed's origin. A local feed may point to local
+article and content URLs on that same origin, but a remote feed cannot redirect
+the client toward a loopback, private-network, or unrelated public origin.
+Feed and article redirects must also remain on their original origin.
+
 ## Check a package
 
 ```sh
