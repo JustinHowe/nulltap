@@ -6,6 +6,7 @@ import os
 import pydoc
 import re
 import shutil
+import ssl
 import sys
 import textwrap
 import urllib.error
@@ -16,6 +17,8 @@ from collections import Counter
 from collections.abc import Callable, Iterable, Sequence
 from datetime import datetime, timedelta, timezone
 from typing import Any, TextIO
+
+import truststore
 
 from . import __version__
 
@@ -36,6 +39,12 @@ RULE = re.compile(r"^\s*(?:[-*_]\s*){3,}$")
 
 class FeedError(RuntimeError):
     pass
+
+
+def open_with_system_trust(request: urllib.request.Request, timeout: float) -> Any:
+    """Open a URL with the operating system's native certificate verifier."""
+    context = truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    return urllib.request.urlopen(request, timeout=timeout, context=context)
 
 
 def safe_text(value: Any) -> str:
@@ -208,7 +217,7 @@ def _fetch_json(
 def fetch_feed_document(
     url: str = DEFAULT_FEED_URL,
     timeout: float = 10.0,
-    opener: Callable[..., Any] = urllib.request.urlopen,
+    opener: Callable[..., Any] = open_with_system_trust,
 ) -> dict[str, list[dict[str, Any]]]:
     payload = _fetch_json(
         url,
@@ -224,7 +233,7 @@ def fetch_feed_document(
 def fetch_feed(
     url: str = DEFAULT_FEED_URL,
     timeout: float = 10.0,
-    opener: Callable[..., Any] = urllib.request.urlopen,
+    opener: Callable[..., Any] = open_with_system_trust,
 ) -> list[dict[str, Any]]:
     """Return feed items for callers using the 0.1.0 list-based API."""
     return fetch_feed_document(url, timeout, opener)["items"]
@@ -233,7 +242,7 @@ def fetch_feed(
 def fetch_article(
     item: dict[str, Any],
     timeout: float = 10.0,
-    opener: Callable[..., Any] = urllib.request.urlopen,
+    opener: Callable[..., Any] = open_with_system_trust,
 ) -> dict[str, Any]:
     content_url = item.get("content_url", "")
     if not content_url:

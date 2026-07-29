@@ -89,7 +89,7 @@ Redirected output automatically uses non-interactive mode. Article IDs and slugs
 
 ## Network and privacy
 
-Listing and search commands make one read-only request to the public feed. Reading an article makes one additional request for its text. The client has no analytics, account, background process, or local database. Feed and article text are stripped of terminal control sequences before display.
+Listing and search commands make one read-only request to the public feed. Reading an article makes one additional request for its text. HTTPS certificates are verified through the operating system's native trust store. The client has no analytics, account, background process, or local database. Feed and article text are stripped of terminal control sequences before display.
 
 Contributor setup, same-origin local feed overrides, and release checks are documented in [CONTRIBUTING.md](https://github.com/JustinHowe/nulltap/blob/main/CONTRIBUTING.md). Article and content URLs from a custom feed must share that feed's origin, and cross-origin redirects are rejected.
 

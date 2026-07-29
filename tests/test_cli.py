@@ -1,6 +1,7 @@
 import io
 import json
 import re
+import ssl
 import unittest
 from unittest.mock import patch
 from datetime import datetime, timezone
@@ -361,6 +362,21 @@ class NulltapCliTests(unittest.TestCase):
         items = fetch_feed("https://nulltap.sh/feed.json", 3, opener=opener)
         self.assertEqual(len(items), 1)
         self.assertEqual(seen, {"url": "https://nulltap.sh/feed.json", "timeout": 3})
+
+    @patch("nulltap.cli.urllib.request.urlopen")
+    @patch("nulltap.cli.truststore.SSLContext")
+    def test_default_transport_uses_native_system_trust(self, context_type, urlopen):
+        payload = json.dumps({"items": [ITEMS[0]], "topics": TOPICS}).encode()
+        native_context = context_type.return_value
+        urlopen.return_value = FakeResponse(payload)
+
+        document = fetch_feed_document(timeout=3)
+
+        self.assertEqual(len(document["items"]), 1)
+        context_type.assert_called_once_with(ssl.PROTOCOL_TLS_CLIENT)
+        request = urlopen.call_args.args[0]
+        self.assertEqual(request.full_url, "https://nulltap.sh/feed.json")
+        self.assertEqual(urlopen.call_args.kwargs, {"timeout": 3, "context": native_context})
 
     def test_fetch_feed_rejects_cross_origin_redirect(self):
         payload = json.dumps({"items": [ITEMS[0]]}).encode()
