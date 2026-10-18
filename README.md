@@ -1,6 +1,6 @@
 # nulltap
 
-Read [Nulltap](https://nulltap.sh) from a terminal. Browse recent cybersecurity and AI articles, search the feed, filter by topic, and choose the full or 1-minute version without opening a browser.
+Read [Nulltap](https://nulltap.com) from a terminal. Browse recent cybersecurity and AI articles, search the feed, filter by topic, and choose the full or 1-minute version without opening a browser.
 
 ## Install
 
@@ -59,11 +59,11 @@ AI
 threats
 ```
 
-`nulltap topics` reads the catalog from nulltap.sh and shows every topic, including topics that do not have a published article yet. Topic IDs are case-insensitive.
+`nulltap topics` reads the catalog from nulltap.com and shows every topic, including topics that do not have a published article yet. Topic IDs are case-insensitive.
 
 ## Search and recent filters
 
-Search runs locally over the feed already downloaded from nulltap.sh. Search words are not sent to Nulltap or another service.
+Search runs locally over the feed already downloaded from nulltap.com. Search words are not sent to Nulltap or another service.
 
 Every search word must match the title, summary, or a topic tag. Title matches rank first, followed by topic and summary matches. Publication date breaks ties.
 

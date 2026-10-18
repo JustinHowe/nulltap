@@ -22,7 +22,7 @@ On Windows, activate the environment with `.venv\Scripts\activate`. On macOS or 
 
 ## Test a local feed
 
-Use `--feed` when developing against a local copy of nulltap.sh:
+Use `--feed` when developing against a local copy of nulltap.com:
 
 ```sh
 nulltap --feed http://127.0.0.1:4321/feed.json

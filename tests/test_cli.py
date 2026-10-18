@@ -25,8 +25,8 @@ from nulltap.cli import (
 ITEMS = [
     {
         "id": "2026-07-26-cloud-token",
-        "url": "https://nulltap.sh/p/cloud-token/",
-        "content_url": "https://nulltap.sh/api/articles/cloud-token.json",
+        "url": "https://nulltap.com/p/cloud-token/",
+        "content_url": "https://nulltap.com/api/articles/cloud-token.json",
         "title": "Cloud Tokens Became the Perimeter",
         "summary": "An identity failure exposed a cloud control plane.",
         "date_published": "2026-07-26T12:00:00Z",
@@ -39,8 +39,8 @@ ITEMS = [
     },
     {
         "id": "2026-07-25-ai-gateway",
-        "url": "https://nulltap.sh/p/ai-gateway/",
-        "content_url": "https://nulltap.sh/api/articles/ai-gateway.json",
+        "url": "https://nulltap.com/p/ai-gateway/",
+        "content_url": "https://nulltap.com/api/articles/ai-gateway.json",
         "title": "The AI Gateway Had Root",
         "summary": "A gateway flaw exposed credentials used by production agents.",
         "date_published": "2026-07-25T12:00:00Z",
@@ -65,7 +65,7 @@ TOPICS = [
 
 
 class FakeResponse:
-    def __init__(self, payload, url="https://nulltap.sh/feed.json"):
+    def __init__(self, payload, url="https://nulltap.com/feed.json"):
         self.payload = payload
         self.url = url
         self.headers = {}
@@ -186,7 +186,7 @@ class NulltapCliTests(unittest.TestCase):
         self.assertIn("The AI Gateway Had Root", stdout)
         self.assertIn("The token crossed a trust boundary.", stdout)
         self.assertIn("Primary advisory: https://example.com/advisory", stdout)
-        self.assertNotIn("https://nulltap.sh/p/ai-gateway/", stdout)
+        self.assertNotIn("https://nulltap.com/p/ai-gateway/", stdout)
 
     def test_show_is_an_alias_for_terminal_reading(self):
         code, stdout, _ = self.invoke(["show", "1"])
@@ -216,7 +216,7 @@ class NulltapCliTests(unittest.TestCase):
     def test_list_does_not_require_browser_urls(self):
         code, stdout, _ = self.invoke(["latest"])
         self.assertEqual(code, 0)
-        self.assertNotIn("https://nulltap.sh/p/", stdout)
+        self.assertNotIn("https://nulltap.com/p/", stdout)
         self.assertIn("[1]", stdout)
 
     def test_interactive_list_reads_selected_article_without_a_slug(self):
@@ -298,14 +298,14 @@ class NulltapCliTests(unittest.TestCase):
             opener=lambda url, **_kwargs: opened.append(url) or True,
         )
         self.assertEqual(code, 0)
-        self.assertEqual(opened, ["https://nulltap.sh/p/cloud-token/"])
+        self.assertEqual(opened, ["https://nulltap.com/p/cloud-token/"])
         self.assertIn(opened[0], stdout)
 
     def test_normalization_strips_terminal_escape_sequences(self):
         item = normalize_item(
             {
                 "id": "unsafe",
-                "url": "https://nulltap.sh/p/unsafe/",
+                "url": "https://nulltap.com/p/unsafe/",
                 "content_url": "https://evil.example/article.json",
                 "title": "safe\x1b[31m red",
                 "summary": "summary\x00text",
@@ -359,9 +359,9 @@ class NulltapCliTests(unittest.TestCase):
             seen["timeout"] = timeout
             return FakeResponse(payload)
 
-        items = fetch_feed("https://nulltap.sh/feed.json", 3, opener=opener)
+        items = fetch_feed("https://nulltap.com/feed.json", 3, opener=opener)
         self.assertEqual(len(items), 1)
-        self.assertEqual(seen, {"url": "https://nulltap.sh/feed.json", "timeout": 3})
+        self.assertEqual(seen, {"url": "https://nulltap.com/feed.json", "timeout": 3})
 
     @patch("nulltap.cli.urllib.request.urlopen")
     @patch("nulltap.cli.truststore.SSLContext")
@@ -375,14 +375,14 @@ class NulltapCliTests(unittest.TestCase):
         self.assertEqual(len(document["items"]), 1)
         context_type.assert_called_once_with(ssl.PROTOCOL_TLS_CLIENT)
         request = urlopen.call_args.args[0]
-        self.assertEqual(request.full_url, "https://nulltap.sh/feed.json")
+        self.assertEqual(request.full_url, "https://nulltap.com/feed.json")
         self.assertEqual(urlopen.call_args.kwargs, {"timeout": 3, "context": native_context})
 
     def test_fetch_feed_rejects_cross_origin_redirect(self):
         payload = json.dumps({"items": [ITEMS[0]]}).encode()
         with self.assertRaisesRegex(FeedError, "redirected to a different origin"):
             fetch_feed(
-                "https://nulltap.sh/feed.json",
+                "https://nulltap.com/feed.json",
                 3,
                 opener=lambda _request, timeout: FakeResponse(
                     payload,
@@ -393,7 +393,7 @@ class NulltapCliTests(unittest.TestCase):
     def test_fetch_feed_document_includes_topic_catalog(self):
         payload = json.dumps({"items": ITEMS, "topics": TOPICS}).encode()
         document = fetch_feed_document(
-            "https://nulltap.sh/feed.json",
+            "https://nulltap.com/feed.json",
             3,
             opener=lambda _request, timeout: FakeResponse(payload),
         )
