@@ -23,7 +23,7 @@ import truststore
 from . import __version__
 
 
-DEFAULT_FEED_URL = "https://nulltap.sh/feed.json"
+DEFAULT_FEED_URL = "https://nulltap.com/feed.json"
 MAX_FEED_BYTES = 5 * 1024 * 1024
 MAX_ARTICLE_BYTES = 2 * 1024 * 1024
 ANSI_ESCAPE = re.compile(r"\x1b(?:[@-Z\-_]|\[[0-?]*[ -/]*[@-~])")
@@ -184,7 +184,7 @@ def _fetch_json(
         url,
         headers={
             "Accept": accept,
-            "User-Agent": f"nulltap/{__version__} (+https://nulltap.sh)",
+            "User-Agent": f"nulltap/{__version__} (+https://nulltap.com)",
         },
     )
 
@@ -312,7 +312,7 @@ def build_parser() -> argparse.ArgumentParser:
     common.add_argument(
         "--feed",
         metavar="URL",
-        help="JSON feed URL (default: NULLTAP_FEED_URL or nulltap.sh/feed.json)",
+        help="JSON feed URL (default: NULLTAP_FEED_URL or nulltap.com/feed.json)",
     )
     common.add_argument("--timeout", type=float, metavar="SECONDS", help="network timeout (default: 10)")
     common.add_argument("--json", action="store_true", help="emit JSON for scripts")
